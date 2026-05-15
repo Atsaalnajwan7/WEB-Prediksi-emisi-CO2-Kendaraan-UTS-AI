@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Beranda - Prediksi Emisi CO2{% endblock %}
+
+{% block content %}
+<div class="hero-section">
+    <div class="container">
+        <div class="row min-vh-100 align-items-center">
+            <div class="col-lg-6">
+                <h1 class="display-4 fw-bold mb-4">
+                    Prediksi Emisi CO₂ Kendaraan
+                </h1>
+                <p class="lead mb-4">
+                    Gunakan teknologi Machine Learning untuk memprediksi emisi CO2
+                    kendaraan berdasarkan spesifikasi mesin dan konsumsi bahan bakar.
+                </p>
+                <div class="d-flex gap-3">
+                    <a href="/predict" class="btn btn-primary btn-lg">
+                        <i class="fas fa-chart-line me-2"></i>Mulai Prediksi
+                    </a>
+                </div>
+            </div>
+            <div class="col-lg-6 text-center">
+                <a href="/predict" class="text-decoration-none">
+                    <i class="fas fa-car fa-8x text-primary opacity-75" style="transition: transform 0.3s; cursor: pointer;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container py-5">
+    <div class="row text-center g-4">
+        <div class="col-md-4">
+            <div class="feature-card">
+                <a href="/predict" class="text-decoration-none d-block">
+                    <i class="fas fa-microchip fa-3x text-primary mb-3" style="transition: transform 0.3s;" onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'"></i>
+                </a>
+                <h4>5 Algoritma ML</h4>
+                <p>Linear Regression, Decision Tree, Random Forest, K-Means, Backpropagation</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="feature-card">
+                <a href="/predict" class="text-decoration-none d-block">
+                    <i class="fas fa-chart-line fa-3x text-primary mb-3" style="transition: transform 0.3s;" onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'"></i>
+                </a>
+                <h4>Akurasi Tinggi</h4>
+                <p>Model Random Forest mencapai R² Score 0.9973 (99.73%)</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="feature-card">
+                <a href="/predict" class="text-decoration-none d-block">
+                    <i class="fas fa-database fa-3x text-primary mb-3" style="transition: transform 0.3s;" onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform='scale(1)'"></i>
+                </a>
+                <h4>7.385 Data Kendaraan</h4>
+                <p>Dataset real dari Canada dengan berbagai merek dan model</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
