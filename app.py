@@ -1,6 +1,7 @@
 # ============================================
 # APLIKASI WEB PREDIKSI EMISI CO2 KENDARAAN
 # UTS PRAKTIKUM KECERDASAN BUATAN
+# DEPLOYMENT READY - RAILWAY
 # ============================================
 
 from flask import Flask, render_template, request, jsonify
@@ -8,16 +9,19 @@ import joblib
 import numpy as np
 import pandas as pd
 import os
+import sys
+import warnings
+warnings.filterwarnings('ignore')
 
 app = Flask(__name__)
 
-# Class Backpropagation untuk unpickling
+# ==================== BACKPROPAGATION CLASS ====================
 class BackpropagationNN:
-    def __init__(self, input_size, hidden_size, output_size, lr=0.01):
-        self.W1 = np.random.randn(input_size, hidden_size) * 0.5
-        self.b1 = np.zeros((1, hidden_size))
-        self.W2 = np.random.randn(hidden_size, output_size) * 0.5
-        self.b2 = np.zeros((1, output_size))
+    def __init__(self, input_size=None, hidden_size=None, output_size=None, lr=0.01):
+        self.W1 = None
+        self.b1 = None
+        self.W2 = None
+        self.b2 = None
         self.lr = lr
         self.losses = []
     
@@ -33,14 +37,10 @@ class BackpropagationNN:
     def predict(self, X):
         return self.forward(X).flatten()
 
-# Load semua model dan scaler
-rf_model = joblib.load('models/random_forest.pkl')
-dt_model = joblib.load('models/decision_tree.pkl')
-lr_model = joblib.load('models/linear_regression.pkl')
-kmeans_model = joblib.load('models/kmeans.pkl')
-bp_model = joblib.load('models/backpropagation.pkl')
-bp_meta = joblib.load('models/bp_meta.pkl')
-scaler = joblib.load('models/scaler.pkl')
+# ==================== LOAD MODELS ====================
+print("="*50)
+print("Loading models for Railway Deployment...")
+print("="*50)
 
 # Mapping Fuel Type
 fuel_type_map = {
@@ -50,6 +50,55 @@ fuel_type_map = {
     'E85 (E)': 3
 }
 
+# Load models dengan error handling
+models = {}
+try:
+    # Cek apakah file model ada
+    model_files = {
+        'random_forest': 'models/random_forest.pkl',
+        'decision_tree': 'models/decision_tree.pkl',
+        'linear_regression': 'models/linear_regression.pkl',
+        'kmeans': 'models/kmeans.pkl',
+        'backpropagation': 'models/backpropagation.pkl',
+        'bp_meta': 'models/bp_meta.pkl',
+        'scaler': 'models/scaler.pkl'
+    }
+    
+    for key, path in model_files.items():
+        if os.path.exists(path):
+            models[key] = joblib.load(path)
+            print(f"✅ {key} loaded successfully")
+        else:
+            print(f"⚠️ {key} not found at {path}")
+            models[key] = None
+            
+except Exception as e:
+    print(f"Error loading models: {e}")
+
+# ==================== FUNGSI PREDIKSI ====================
+def predict_with_model(features_scaled, model_name):
+    """Helper function untuk prediksi dengan berbagai model"""
+    try:
+        if model_name == 'random_forest' and models['random_forest']:
+            return round(models['random_forest'].predict(features_scaled)[0], 2)
+        elif model_name == 'decision_tree' and models['decision_tree']:
+            return round(models['decision_tree'].predict(features_scaled)[0], 2)
+        elif model_name == 'linear_regression' and models['linear_regression']:
+            return round(models['linear_regression'].predict(features_scaled)[0], 2)
+        elif model_name == 'backpropagation' and models['backpropagation'] and models['bp_meta']:
+            bp_norm = models['backpropagation'].predict(features_scaled)[0]
+            meta = models['bp_meta']
+            pred_bp = bp_norm * (meta['max'] - meta['min']) + meta['min']
+            return round(pred_bp, 2)
+        elif model_name == 'kmeans' and models['kmeans']:
+            return int(models['kmeans'].predict(features_scaled)[0])
+        else:
+            return None
+    except Exception as e:
+        print(f"Error in {model_name} prediction: {e}")
+        return None
+
+# ==================== ROUTES ====================
 @app.route('/')
 def home():
     """Halaman utama"""
@@ -74,39 +123,84 @@ def predict():
             # Konversi fuel type ke numeric
             fuel_type_num = fuel_type_map.get(fuel_type, 1)
             
-            # Buat array fitur
-            features = np.array([[engine_size, cylinders, fuel_city, fuel_hwy, fuel_comb, fuel_type_num]])
+            # Buat array fitur (6 fitur)
+            features = np.array([[
+                engine_size, cylinders, fuel_city, fuel_hwy, fuel_comb, fuel_type_num
+            ]])
             
-            # Standarisasi
-            features_scaled = scaler.transform(features)
+            # Standarisasi jika scaler ada
+            if models['scaler']:
+                features_scaled = models['scaler'].transform(features)
+            else:
+                features_scaled = features
             
-            # Prediksi dengan semua model
-            pred_rf = round(rf_model.predict(features_scaled)[0], 2)
-            pred_dt = round(dt_model.predict(features_scaled)[0], 2)
-            pred_lr = round(lr_model.predict(features_scaled)[0], 2)
+            # Prediksi dengan semua model yang tersedia
+            predictions = []
             
-            # K-Means memprediksi cluster
-            cluster = kmeans_model.predict(features_scaled)[0]
+            # Random Forest
+            pred_rf = predict_with_model(features_scaled, 'random_forest')
+            if pred_rf is not None:
+                predictions.append({'name': 'Random Forest ⭐', 'value': pred_rf, 'is_cluster': False, 'color': 'success'})
             
-            # Backpropagation (perlu denormalisasi)
-            bp_norm = bp_model.predict(features_scaled)[0]
-            pred_bp = bp_norm * (bp_meta['max'] - bp_meta['min']) + bp_meta['min']
-            pred_bp = round(pred_bp, 2)
+            # Decision Tree
+            pred_dt = predict_with_model(features_scaled, 'decision_tree')
+            if pred_dt is not None:
+                predictions.append({'name': 'Decision Tree', 'value': pred_dt, 'is_cluster': False, 'color': 'primary'})
             
-            predictions = [
-                {'name': 'Random Forest', 'value': pred_rf, 'is_cluster': False},
-                {'name': 'Decision Tree', 'value': pred_dt, 'is_cluster': False},
-                {'name': 'Linear Regression', 'value': pred_lr, 'is_cluster': False},
-                {'name': 'Backpropagation', 'value': pred_bp, 'is_cluster': False},
-                {'name': 'K-Means Clustering', 'value': int(cluster), 'is_cluster': True}
-            ]
+            # Linear Regression
+            pred_lr = predict_with_model(features_scaled, 'linear_regression')
+            if pred_lr is not None:
+                predictions.append({'name': 'Linear Regression', 'value': pred_lr, 'is_cluster': False, 'color': 'info'})
+            
+            # Backpropagation
+            pred_bp = predict_with_model(features_scaled, 'backpropagation')
+            if pred_bp is not None:
+                predictions.append({'name': 'Backpropagation', 'value': pred_bp, 'is_cluster': False, 'color': 'warning'})
+            
+            # K-Means (cluster)
+            cluster = predict_with_model(features_scaled, 'kmeans')
+            if cluster is not None:
+                cluster_names = {0: 'Rendah', 1: 'Sedang', 2: 'Tinggi'}
+                predictions.append({
+                    'name': 'K-Means Clustering', 
+                    'value': cluster, 
+                    'cluster_name': cluster_names.get(cluster, 'Unknown'),
+                    'is_cluster': True, 
+                    'color': 'secondary'
+                })
             
         except Exception as e:
             error = str(e)
+            print(f"Prediction error: {error}")
     
     return render_template('predict.html', predictions=predictions, error=error)
 
+@app.route('/comparison')
+def comparison():
+    """Halaman perbandingan model"""
+    return render_template('comparison.html')
 
+@app.route('/about')
+def about():
+    """Halaman tentang"""
+    return render_template('about.html')
+
+@app.route('/health')
+def health():
+    """Health check endpoint untuk Railway"""
+    models_status = {
+        'random_forest': models['random_forest'] is not None,
+        'decision_tree': models['decision_tree'] is not None,
+        'linear_regression': models['linear_regression'] is not None,
+        'kmeans': models['kmeans'] is not None,
+        'backpropagation': models['backpropagation'] is not None,
+        'scaler': models['scaler'] is not None
+    }
+    return jsonify({
+        'status': 'ok', 
+        'message': 'Server is running',
+        'models': models_status
+    })
 
 @app.route('/api/predict', methods=['POST'])
 def api_predict():
@@ -121,11 +215,37 @@ def api_predict():
             data['fuel_comb'],
             fuel_type_map.get(data['fuel_type'], 1)
         ]])
-        features_scaled = scaler.transform(features)
-        prediction = rf_model.predict(features_scaled)[0]
-        return jsonify({'success': True, 'prediction': round(prediction, 2)})
+        
+        if models['scaler']:
+            features_scaled = models['scaler'].transform(features)
+        else:
+            features_scaled = features
+            
+        if models['random_forest']:
+            prediction = models['random_forest'].predict(features_scaled)[0]
+            return jsonify({'success': True, 'prediction': round(prediction, 2)})
+        else:
+            return jsonify({'success': False, 'error': 'Model not loaded'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+# ==================== ERROR HANDLERS ====================
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('index.html'), 404
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    return jsonify({'error': 'Internal server error'}), 500
+
+# ==================== RUN APP ====================
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    
+    print("="*50)
+    print(f"Starting Flask app on port {port}")
+    print(f"Debug mode: {debug_mode}")
+    print("="*50)
+    
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)
