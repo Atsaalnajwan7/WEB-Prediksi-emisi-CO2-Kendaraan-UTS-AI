@@ -55,7 +55,7 @@ if not os.path.exists('models'):
     os.makedirs('models')
     print("📁 Folder 'models' created")
 
-# Load models dengan error handling
+# Inisialisasi models dictionary
 models = {
     'random_forest': None,
     'decision_tree': None,
@@ -66,8 +66,10 @@ models = {
     'scaler': None
 }
 
-# Coba load semua model
-model_files = {
+# Coba load semua model dengan try-except
+print("\n📂 Checking model files...")
+
+model_paths = {
     'random_forest': 'models/random_forest.pkl',
     'decision_tree': 'models/decision_tree.pkl',
     'linear_regression': 'models/linear_regression.pkl',
@@ -77,17 +79,24 @@ model_files = {
     'scaler': 'models/scaler.pkl'
 }
 
-for key, path in model_files.items():
+for name, path in model_paths.items():
     try:
         if os.path.exists(path):
-            models[key] = joblib.load(path)
-            print(f"✅ {key} loaded successfully from {path}")
+            models[name] = joblib.load(path)
+            print(f"✅ {name} loaded ({os.path.getsize(path)} bytes)")
         else:
-            print(f"⚠️ {key} not found at {path}")
-            models[key] = None
+            print(f"❌ {name} NOT FOUND at {path}")
     except Exception as e:
-        print(f"❌ Error loading {key}: {e}")
-        models[key] = None
+        print(f"❌ Error loading {name}: {e}")
+
+# Tampilkan ringkasan
+print("\n" + "="*50)
+print("MODELS LOADING SUMMARY:")
+print("="*50)
+for name, model in models.items():
+    status = "✅ LOADED" if model is not None else "❌ NOT LOADED"
+    print(f"  {name}: {status}")
+print("="*50)
 
 # ==================== FUNGSI PREDIKSI ====================
 def predict_with_model(features_scaled, model_name):
@@ -118,12 +127,10 @@ def predict_with_model(features_scaled, model_name):
 # ==================== ROUTES ====================
 @app.route('/')
 def home():
-    """Halaman utama"""
     return render_template('index.html')
 
 @app.route('/predict', methods=['GET', 'POST'])
 def predict():
-    """Halaman prediksi"""
     predictions = None
     error = None
     
@@ -137,27 +144,19 @@ def predict():
             fuel_comb = float(request.form['fuel_comb'])
             fuel_type = request.form['fuel_type']
             
-            # Konversi fuel type ke numeric
             fuel_type_num = fuel_type_map.get(fuel_type, 1)
             
-            # Buat array fitur (6 fitur)
             features = np.array([[
                 engine_size, cylinders, fuel_city, fuel_hwy, fuel_comb, fuel_type_num
             ]])
             
-            # Standarisasi jika scaler ada
+            # Standarisasi
             if models.get('scaler') is not None:
-                try:
-                    features_scaled = models['scaler'].transform(features)
-                    print("✅ Scaler applied successfully")
-                except Exception as e:
-                    print(f"⚠️ Scaler transform error: {e}")
-                    features_scaled = features
+                features_scaled = models['scaler'].transform(features)
             else:
-                print("⚠️ Scaler not available, using raw features")
                 features_scaled = features
             
-            # Prediksi dengan semua model yang tersedia
+            # Prediksi dengan semua model
             predictions = []
             
             # Random Forest
@@ -180,10 +179,10 @@ def predict():
             if pred_bp is not None:
                 predictions.append({'name': 'Backpropagation', 'value': pred_bp, 'is_cluster': False, 'color': 'warning'})
             
-            # K-Means (cluster)
+            # K-Means
             cluster = predict_with_model(features_scaled, 'kmeans')
             if cluster is not None:
-                cluster_names = {0: 'Rendah (0-200 g/km)', 1: 'Sedang (200-300 g/km)', 2: 'Tinggi (>300 g/km)'}
+                cluster_names = {0: 'Rendah', 1: 'Sedang', 2: 'Tinggi'}
                 predictions.append({
                     'name': 'K-Means Clustering', 
                     'value': cluster, 
@@ -193,85 +192,51 @@ def predict():
                 })
             
             if not predictions:
-                error = "Tidak ada model yang tersedia. Pastikan file model sudah diupload."
+                error = "Tidak ada model yang tersedia"
             
-        except KeyError as e:
-            error = f"Form error: Field {e} tidak ditemukan"
-            print(f"Form error: {e}")
-        except ValueError as e:
-            error = f"Input error: Pastikan semua input diisi dengan angka yang valid"
-            print(f"Value error: {e}")
         except Exception as e:
-            error = f"Error: {str(e)}"
+            error = str(e)
             print(f"Prediction error: {error}")
     
     return render_template('predict.html', predictions=predictions, error=error)
 
 @app.route('/comparison')
 def comparison():
-    """Halaman perbandingan model"""
     return render_template('comparison.html')
 
 @app.route('/about')
 def about():
-    """Halaman tentang"""
     return render_template('about.html')
 
 @app.route('/health')
 def health():
-    """Health check endpoint untuk Railway"""
-    models_status = {
-        'random_forest': models.get('random_forest') is not None,
-        'decision_tree': models.get('decision_tree') is not None,
-        'linear_regression': models.get('linear_regression') is not None,
-        'kmeans': models.get('kmeans') is not None,
-        'backpropagation': models.get('backpropagation') is not None,
-        'scaler': models.get('scaler') is not None
-    }
+    models_status = {k: v is not None for k, v in models.items()}
     return jsonify({
-        'status': 'ok', 
+        'status': 'ok',
         'message': 'Server is running',
-        'models_loaded': models_status,
-        'note': 'Jika ada model yang False, pastikan file .pkl sudah diupload'
+        'models_loaded': models_status
     })
 
-@app.route('/api/predict', methods=['POST'])
-def api_predict():
-    """API endpoint untuk prediksi"""
-    try:
-        data = request.get_json()
-        features = np.array([[
-            data['engine_size'],
-            data['cylinders'],
-            data['fuel_city'],
-            data['fuel_hwy'],
-            data['fuel_comb'],
-            fuel_type_map.get(data['fuel_type'], 1)
-        ]])
-        
-        if models.get('scaler') is not None:
-            features_scaled = models['scaler'].transform(features)
-        else:
-            features_scaled = features
-            
-        if models.get('random_forest') is not None:
-            prediction = models['random_forest'].predict(features_scaled)[0]
-            return jsonify({'success': True, 'prediction': round(prediction, 2)})
-        else:
-            return jsonify({'success': False, 'error': 'Model Random Forest not loaded'})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+@app.route('/debug-models')
+def debug_models():
+    """Debug endpoint untuk cek file di server"""
+    import os
+    files_info = {}
+    
+    if os.path.exists('models'):
+        for f in os.listdir('models'):
+            path = os.path.join('models', f)
+            files_info[f] = {
+                'size': os.path.getsize(path),
+                'exists': True
+            }
+    
+    return jsonify({
+        'models_folder_exists': os.path.exists('models'),
+        'files_in_models': files_info,
+        'models_loaded': {k: v is not None for k, v in models.items()}
+    })
 
-# ==================== ERROR HANDLERS ====================
-@app.errorhandler(404)
-def page_not_found(e):
-    return render_template('index.html'), 404
-
-@app.errorhandler(500)
-def internal_server_error(e):
-    return jsonify({'error': 'Internal server error'}), 500
-
-# ==================== RUN APP ====================
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
@@ -279,13 +244,6 @@ if __name__ == '__main__':
     print("="*50)
     print(f"Starting Flask app on port {port}")
     print(f"Debug mode: {debug_mode}")
-    print("="*50)
-    
-    # Tampilkan status model
-    print("\n📊 Model Status:")
-    for key, value in models.items():
-        status = "✅ Loaded" if value is not None else "❌ Not Found"
-        print(f"   {key}: {status}")
     print("="*50)
     
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
